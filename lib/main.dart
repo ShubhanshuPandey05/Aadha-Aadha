@@ -61,6 +61,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int tab = 0;
   late final LedgerRealtime realtime;
   Timer? poll;
+  Map<String, dynamic> update = {};
+  bool checkingUpdate = false, downloadingUpdate = false;
+  String? updateError;
+  String? promptedVersion;
   Map<String, dynamic>? deferredRoute;
   String get user => status['user_id'] as String? ?? '';
   Map<String, dynamic>? get group => snapshot['group'] as Map<String, dynamic>?;
@@ -88,8 +92,72 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     NativeBridge.channel.setMethodCallHandler((call) async {
       if (call.method == 'route') await readRoute();
     });
-    refresh().then((_) => readRoute());
+    refresh().then((_) async {
+      await readRoute();
+      await checkUpdate();
+    });
     startPolling();
+  }
+
+  Future<void> checkUpdate({bool manual = false}) async {
+    if (!mounted || checkingUpdate || downloadingUpdate) return;
+    setState(() {
+      checkingUpdate = true;
+      updateError = null;
+    });
+    try {
+      final next = await NativeBridge.call('checkUpdate', {'force': manual});
+      if (!mounted) return;
+      setState(() => update = next);
+      if (next['available'] == true &&
+          (manual || promptedVersion != next['version'])) {
+        promptedVersion = next['version'] as String;
+        final accept = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+                    title: Text('Update to ${next['version']}'),
+                    content: Text(
+                        'A new Aadha/Aadha update is available (${((next['size'] as num) / 1000000).toStringAsFixed(2)} MB). Download it now? Android will ask you to confirm installation. Your ledger and login stay intact.'),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Later')),
+                      FilledButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Download update'))
+                    ]));
+        if (accept == true && mounted) await installUpdate();
+      } else if (manual) {
+        message('No newer compatible release is available.');
+      }
+    } catch (e) {
+      if (mounted) setState(() => updateError = humanError(e));
+      if (manual) message(humanError(e));
+    } finally {
+      if (mounted) setState(() => checkingUpdate = false);
+    }
+  }
+
+  Future<void> installUpdate() async {
+    if (downloadingUpdate) return;
+    setState(() {
+      downloadingUpdate = true;
+      updateError = null;
+      tab = 2;
+    });
+    message('Downloading update. You can keep using your ledger.');
+    try {
+      final result = await NativeBridge.call('installUpdate');
+      if (result['permission'] == true) {
+        message(
+            'Allow updates from Aadha/Aadha, then return and tap Install update again.');
+      }
+    } catch (e) {
+      if (mounted) setState(() => updateError = humanError(e));
+      message(humanError(e));
+    } finally {
+      if (mounted) setState(() => downloadingUpdate = false);
+    }
   }
 
   void startPolling() {
@@ -118,7 +186,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      refresh(quiet: true).then((_) => readRoute());
+      refresh(quiet: true).then((_) async {
+        await readRoute();
+        await checkUpdate();
+      });
       startPolling();
     } else if (state == AppLifecycleState.paused) {
       poll?.cancel();
@@ -467,9 +538,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     repayment ? Icons.swap_horiz : Icons.receipt_outlined,
                     color: teal)),
             title: Text(
-                repayment
-                    ? 'Repayment'
-                    : row['recipient'] as String? ?? 'Shared expense',
+                row['name'] as String? ??
+                    (repayment
+                        ? 'Repayment'
+                        : row['recipient'] as String? ?? 'Shared expense'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w700)),
@@ -583,6 +655,39 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Widget settingsView() =>
       ListView(padding: const EdgeInsets.all(24), children: [
+        Card(
+            child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                          'App updates${update['current'] == null ? '' : ' - ${update['current']}'}',
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
+                      const Text(
+                          'Checks automatically when you open the app, up to once a day. Android asks before installation.'),
+                      if (downloadingUpdate) ...[
+                        const SizedBox(height: 12),
+                        const LinearProgressIndicator(),
+                        const Text('Downloading and verifying update...')
+                      ],
+                      if (updateError != null)
+                        Text(updateError!,
+                            style: TextStyle(
+                                color: Theme.of(context).colorScheme.error)),
+                      TextButton(
+                          onPressed: checkingUpdate || downloadingUpdate
+                              ? null
+                              : () => checkUpdate(manual: true),
+                          child: Text(checkingUpdate
+                              ? 'Checking...'
+                              : 'Check for updates')),
+                      if (update['available'] == true)
+                        FilledButton(
+                            onPressed: downloadingUpdate ? null : installUpdate,
+                            child: Text('Install update ${update['version']}')),
+                    ]))),
+        const SizedBox(height: 20),
         const Text('Make it one tap.',
             style: TextStyle(
                 fontSize: 28, fontWeight: FontWeight.w800, color: ink)),
@@ -812,7 +917,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         }
       });
   Future<void> editor(
-      {Map<String, dynamic>? candidate, bool repayment = false}) async {
+      {Map<String, dynamic>? candidate,
+      Map<String, dynamic>? entry,
+      bool repayment = false}) async {
     if (group?['ready'] != true) {
       message('Connect your friend first.');
       return;
@@ -824,12 +931,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         builder: (context) => ExpenseEditor(
             friend: friend,
             candidate: candidate,
+            entry: entry,
             repayment: repayment,
             suggestedRepayment: repayment && balance < 0 ? -balance : null));
     if (saved == true) {
-      message('Confirmed. The expense will sync in the background.');
+      message(entry == null
+          ? 'Confirmed. The expense will sync in the background.'
+          : 'Entry updated. Changes recorded in history.');
       await refresh(quiet: true);
     }
+  }
+
+  String historyText(dynamic history) {
+    String describe(dynamic value) =>
+        '${value['name'] ?? 'Unnamed'} | ${money((value['amount_paise'] as num).toInt())} | payer share ${money((value['payer_share_paise'] as num).toInt())} | paid to ${value['recipient'] ?? 'Not specified'}';
+    final before = history['before_value'];
+    return before == null
+        ? describe(history['after_value'])
+        : 'Before: ${describe(before)}\nAfter: ${describe(history['after_value'])}';
   }
 
   Future<void> showExpense(String id) async {
@@ -840,7 +959,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           share = (row['payer_share_paise'] as num).toInt();
       final mine = row['payer_id'] == user,
           repayment = row['kind'] == 'repayment';
-      await showModalBottomSheet<void>(
+      final edit = await showModalBottomSheet<bool>(
           context: context,
           useSafeArea: true,
           isScrollControlled: true,
@@ -851,9 +970,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                        repayment
-                            ? 'Repayment'
-                            : row['recipient'] as String? ?? 'Shared expense',
+                        row['name'] as String? ??
+                            (repayment
+                                ? 'Repayment'
+                                : row['recipient'] as String? ??
+                                    'Shared expense'),
                         style: const TextStyle(
                             fontSize: 26, fontWeight: FontWeight.w800)),
                     const SizedBox(height: 16),
@@ -864,6 +985,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             fontWeight: FontWeight.w700)),
                     const SizedBox(height: 20),
                     info('Paid by', mine ? 'You' : row['payer_name'] as String),
+                    if (row['recipient'] != null)
+                      info('Paid to', row['recipient'] as String),
                     if (!repayment) ...[
                       info('Your share', money(mine ? share : amount - share)),
                       info('$friend’s share',
@@ -887,12 +1010,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     const Text(
                         'A shared ledger entry records what you confirmed. It is not bank verification.'),
                     const SizedBox(height: 24),
+                    if (mine)
+                      OutlinedButton.icon(
+                          onPressed: () => Navigator.pop(context, true),
+                          icon: const Icon(Icons.edit_outlined),
+                          label: const Text('Edit your entry')),
+                    ExpansionTile(
+                        title: const Text('Entry history'),
+                        children: [
+                          for (final h in (row['history'] as List? ?? []))
+                            ListTile(
+                                isThreeLine: true,
+                                title: Text(
+                                    '${h['revision'] == 0 ? 'Created' : 'Edited'} by ${h['actor_name']}'),
+                                subtitle: Text(
+                                    '${DateTime.parse(h['changed_at'] as String).toLocal().toString().split('.').first}\n${historyText(h)}')),
+                        ]),
                     SizedBox(
                         width: double.infinity,
                         child: FilledButton(
                             onPressed: () => Navigator.pop(context),
                             child: const Text('Done')))
                   ])));
+      if (edit == true && mounted) {
+        await editor(entry: row, repayment: repayment);
+      }
     } catch (e) {
       message(humanError(e));
     }

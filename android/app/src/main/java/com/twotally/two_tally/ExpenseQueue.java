@@ -63,6 +63,7 @@ final class ExpenseQueue {
     static JSONObject payload(JSONObject item, long amount, Long share, boolean repayment) throws Exception {
         return new JSONObject().put("p_group_id", item.getString("group")).put("p_client_id", item.getString("id"))
             .put("p_amount_paise", amount).put("p_payer_share_paise", repayment ? 0 : share == null ? (amount + 1) / 2 : share)
+            .put("p_name", item.has("name") ? item.get("name") : JSONObject.NULL)
             .put("p_kind", repayment ? "repayment" : "expense")
             .put("p_recipient", item.has("recipient") ? item.get("recipient") : JSONObject.NULL).put("p_occurred_at", java.time.Instant.ofEpochMilli(item.getLong("timestamp")).toString())
             .put("p_transaction_ref", item.has("reference") ? item.get("reference") : JSONObject.NULL).put("p_source", item.optString("source", "manual"))
@@ -85,7 +86,7 @@ final class ExpenseQueue {
             throw new IllegalArgumentException("Check the amount and your share.");
         JSONObject item = previous == null ? new JSONObject().put("id", id).put("owner", owner).put("group", group)
             .put("created", System.currentTimeMillis()).put("timestamp", System.currentTimeMillis()).put("source", "manual") : previous;
-        item.put("amount", amount).put("recipient", args.opt("recipient")).put("state", "queued")
+        item.put("name", args.opt("name")).put("amount", amount).put("recipient", args.opt("recipient")).put("state", "queued")
             .put("payload", payload(item, amount, share, args.optBoolean("repayment")));
         all.put(id, item); SecureStore.put("queue", all);
         return id;

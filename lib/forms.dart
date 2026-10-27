@@ -207,10 +207,11 @@ class ExpenseEditor extends StatefulWidget {
       {super.key,
       required this.friend,
       this.candidate,
+      this.entry,
       this.repayment = false,
       this.suggestedRepayment});
   final String friend;
-  final Map<String, dynamic>? candidate;
+  final Map<String, dynamic>? candidate, entry;
   final bool repayment;
   final int? suggestedRepayment;
   @override
@@ -220,7 +221,8 @@ class ExpenseEditor extends StatefulWidget {
 class _ExpenseEditorState extends State<ExpenseEditor> {
   final amount = TextEditingController(),
       recipient = TextEditingController(),
-      share = TextEditingController();
+      share = TextEditingController(),
+      expenseName = TextEditingController();
   late final String requestId;
   bool custom = false, saving = false;
   String? error;
@@ -228,12 +230,21 @@ class _ExpenseEditorState extends State<ExpenseEditor> {
   void initState() {
     super.initState();
     requestId = widget.candidate?['id'] as String? ?? newRequestId();
-    final initial =
-        widget.candidate?['amount'] as num? ?? widget.suggestedRepayment;
+    final initial = widget.entry?['amount_paise'] as num? ??
+        widget.candidate?['amount'] as num? ??
+        widget.suggestedRepayment;
     if (initial != null) {
       amount.text = (initial.toInt() / 100).toStringAsFixed(2);
     }
-    recipient.text = widget.candidate?['recipient'] as String? ?? '';
+    recipient.text = widget.entry?['recipient'] as String? ??
+        widget.candidate?['recipient'] as String? ??
+        '';
+    expenseName.text = widget.entry?['name'] as String? ?? '';
+    if (widget.entry != null && !widget.repayment) {
+      final savedShare = (widget.entry!['payer_share_paise'] as num).toInt();
+      custom = savedShare != ((initial!.toInt() + 1) ~/ 2);
+      share.text = (savedShare / 100).toStringAsFixed(2);
+    }
   }
 
   @override
@@ -241,6 +252,7 @@ class _ExpenseEditorState extends State<ExpenseEditor> {
     amount.dispose();
     recipient.dispose();
     share.dispose();
+    expenseName.dispose();
     super.dispose();
   }
 
@@ -259,14 +271,28 @@ class _ExpenseEditorState extends State<ExpenseEditor> {
       error = null;
     });
     try {
-      await NativeBridge.call('queue', {
-        'id': requestId,
-        'amount': paise,
-        'share': myShare,
-        'recipient':
-            recipient.text.trim().isEmpty ? null : recipient.text.trim(),
-        'repayment': widget.repayment,
-      });
+      if (widget.entry != null) {
+        await NativeBridge.call('editExpense', {
+          'p_id': widget.entry!['id'],
+          'p_request_id': requestId,
+          'p_expected_revision': widget.entry!['revision'],
+          'p_amount_paise': paise,
+          'p_payer_share_paise':
+              widget.repayment ? 0 : myShare ?? (paise + 1) ~/ 2,
+          'p_recipient': recipient.text.trim(),
+          'p_name': expenseName.text.trim(),
+        });
+      } else {
+        await NativeBridge.call('queue', {
+          'name': expenseName.text.trim(),
+          'id': requestId,
+          'amount': paise,
+          'share': myShare,
+          'recipient':
+              recipient.text.trim().isEmpty ? null : recipient.text.trim(),
+          'repayment': widget.repayment,
+        });
+      }
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
@@ -292,9 +318,11 @@ class _ExpenseEditorState extends State<ExpenseEditor> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                  widget.repayment
-                      ? 'Record a repayment'
-                      : 'Log a shared expense',
+                  widget.entry != null
+                      ? 'Edit your entry'
+                      : widget.repayment
+                          ? 'Record a repayment'
+                          : 'Log a shared expense',
                   style: const TextStyle(
                       fontSize: 26,
                       fontWeight: FontWeight.w800,
@@ -313,6 +341,13 @@ class _ExpenseEditorState extends State<ExpenseEditor> {
                   decoration: const InputDecoration(
                       labelText: 'Amount', prefixText: '₹ ')),
               const SizedBox(height: 16),
+              TextField(
+                  controller: expenseName,
+                  maxLength: 100,
+                  decoration: const InputDecoration(
+                      labelText: 'Name (optional)',
+                      hintText: 'Food, groceries, movie')),
+              const SizedBox(height: 8),
               if (!widget.repayment) ...[
                 TextField(
                     controller: recipient,
@@ -367,12 +402,17 @@ class _ExpenseEditorState extends State<ExpenseEditor> {
                       onPressed: saving ? null : save,
                       child: Text(saving
                           ? 'Saving…'
-                          : widget.repayment
-                              ? 'Confirm repayment'
-                              : 'Confirm shared expense'))),
+                          : widget.entry != null
+                              ? 'Save changes'
+                              : widget.repayment
+                                  ? 'Confirm repayment'
+                                  : 'Confirm shared expense'))),
               TextButton(
                   onPressed: saving ? null : () => Navigator.pop(context),
                   child: const Text('Cancel')),
+              if (widget.entry != null)
+                const Text(
+                    'Changes require a connection and are recorded in the history visible to both friends.'),
             ]));
   }
 }

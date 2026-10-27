@@ -17,6 +17,7 @@ await db.exec([
 await db.exec(await readFile(new URL('../supabase/migrations/202610270001_ledger.sql',import.meta.url),'utf8'));
 await db.exec(await readFile(new URL('../supabase/migrations/202610270003_google_profile.sql',import.meta.url),'utf8'));
 await db.exec(await readFile(new URL('../supabase/migrations/202610270004_kotak_bhim_sources.sql',import.meta.url),'utf8'));
+await db.exec(await readFile(new URL('../supabase/migrations/202610270005_edit_history.sql',import.meta.url),'utf8'));
 let count=0;
 const check=(name,fn)=>Promise.resolve().then(fn).then(()=>{count++;console.log('PASS '+name);});
 const ids=[randomUUID(),randomUUID(),randomUUID(),randomUUID()];
@@ -150,6 +151,49 @@ await check('all Android payment sources persist and retry without duplicate fri
   }
   const invalid=payload(); invalid[8]='com.unsupported.bank';
   await assert.rejects(log(invalid),/Invalid expense/);
+});
+const editCasts=['uuid','uuid','integer','bigint','bigint','text','text'];
+const editId=randomUUID();
+const editArgs=[expense.id,editId,0,40000,20000,'Cafe','Food'];
+await check('only creator can edit; no direct writes or audit tampering', async()=>{
+  for (const user of [ids[1],ids[2]]) await assert.rejects(as(user,()=>rpc('edit_expense',editArgs,editCasts)),/own entries/);
+  await assert.rejects(as(null,()=>rpc('edit_expense',editArgs,editCasts),'anon'),/permission denied/);
+  for (const sql of ["update public.expenses set name='tampered'",'delete from public.expense_history',"insert into public.expense_history default values"])
+    await assert.rejects(as(ids[0],()=>db.exec(sql)),/permission denied/);
+});
+await check('creator edits atomically with before/after history and updated totals',async()=>{
+  const before=await as(ids[0],()=>rpc('ledger_snapshot'));
+  const result=await as(ids[0],()=>rpc('edit_expense',editArgs,editCasts));
+  assert.equal(result.revision,1);
+  const row=await as(ids[1],()=>rpc('expense_detail',[expense.id],['uuid']));
+  assert.equal(row.name,'Food'); assert.equal(row.amount_paise,40000); assert.equal(row.payer_id,ids[0]);
+  assert.equal(row.history.length,2); assert.equal(row.history[0].before_value.amount_paise,35000);
+  assert.equal(row.history[0].after_value.name,'Food'); assert.equal(row.history[0].actor_id,ids[0]);
+  const after=await as(ids[0],()=>rpc('ledger_snapshot'));
+  assert.equal(after.month.total-before.month.total,5000);
+  assert.equal(after.members.find(m=>m.id===ids[0]).balance-before.members.find(m=>m.id===ids[0]).balance,2500);
+  assert.equal((await as(ids[2],()=>db.query('select * from public.expense_history'))).rows.length,0);
+});
+await check('edit retry and original creation retry remain idempotent after edits',async()=>{
+  assert.equal((await as(ids[0],()=>rpc('edit_expense',editArgs,editCasts))).duplicate,true);
+  assert.equal((await log(first)).id,expense.id);
+  const altered=[...editArgs];altered[6]='Different';
+  await assert.rejects(as(ids[0],()=>rpc('edit_expense',altered,editCasts)),/Request ID/);
+  const stale=[...editArgs];stale[1]=randomUUID();
+  await assert.rejects(as(ids[0],()=>rpc('edit_expense',stale,editCasts)),/entry changed/);
+  assert.equal((await db.query('select count(*)::int n from public.expense_history where expense_id=$1',[expense.id])).rows[0].n,2);
+});
+await check('names can be set on create and cleared later; invalid edits rejected',async()=>{
+  const args=[...payload(), 'Groceries'];
+  const saved=await as(ids[0],()=>rpc('log_expense',args,[...casts,'text']));
+  assert.equal((await as(ids[0],()=>rpc('expense_detail',[saved.id],['uuid']))).name,'Groceries');
+  const update=[saved.id,randomUUID(),0,35000,17500,'Cafe','  '];
+  await as(ids[0],()=>rpc('edit_expense',update,editCasts));
+  assert.equal((await as(ids[0],()=>rpc('expense_detail',[saved.id],['uuid']))).name,null);
+  for (const [index,value] of [[3,-1],[4,999999],[6,'x'.repeat(101)],[5,'x'.repeat(101)],[3,null],[2,null]]) {
+    const invalid=[...update];invalid[1]=randomUUID();invalid[2]=1;invalid[index]=value;
+    await assert.rejects(as(ids[0],()=>rpc('edit_expense',invalid,editCasts)),/Invalid expense|entry changed/);
+  }
 });
 await db.close();
 console.log(count+' database integration checks passed (PGlite/PostgreSQL).');

@@ -54,7 +54,7 @@ Duplicate handling uses a transaction-reference fingerprint where present, other
 - Repayments record money already sent by the logged-in payer. They do not increase spending totals.
 - Positive balance means the other friend owes this person. Balance = expense contributions − expense shares + outgoing repayments − incoming repayments.
 - Current-month totals use Asia/Kolkata month boundaries. Balances and contribution/share totals cover the complete ledger.
-- The activity feed shows the latest 100 rows; push-linked older expenses can still be fetched by ID. No cached offline ledger or expense-edit/delete UI is included.
+- The activity feed shows the latest 100 rows; push-linked older expenses can still be fetched by ID. Creator-only edits require a connection and append shared history. No cached offline ledger or delete UI is included. See [updates and edits](updates-and-edits.md).
 
 ## Data protection
 

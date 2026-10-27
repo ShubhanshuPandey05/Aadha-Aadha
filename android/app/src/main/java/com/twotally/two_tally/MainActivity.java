@@ -93,6 +93,25 @@ public class MainActivity extends FlutterActivity {
     private void handle(MethodCall call, MethodChannel.Result result) {
         try {
             switch (call.method) {
+                case "checkUpdate":
+                case "installUpdate":
+                    AppUpdates.IO.execute(() -> {
+                        try {
+                            if (call.method.equals("checkUpdate")) {
+                                JSONObject info=AppUpdates.check(Boolean.TRUE.equals(call.argument("force")));
+                                runOnUiThread(() -> result.success(info.toString()));
+                            } else {
+                                java.io.File apk=AppUpdates.download(this);
+                                runOnUiThread(() -> {
+                                    try { result.success(AppUpdates.install(this,apk) ? "{\"installing\":true}" : "{\"permission\":true}"); }
+                                    catch(Exception e) { result.error("update","Could not open the Android installer. Try again.",null); }
+                                });
+                            }
+                        } catch(Exception e) {
+                            runOnUiThread(() -> result.error("update",e instanceof java.net.SocketTimeoutException ? "Download timed out. Try another network." : e.getMessage(),null));
+                        }
+                    });
+                    return;
                 case "reconnectListener":
                     UpiNotificationListener.reconnect(this, true);
                     result.success(null); return;
@@ -172,6 +191,7 @@ public class MainActivity extends FlutterActivity {
             case "joinGroup": return Backend.rpc("join_group", new JSONObject().put("p_code", args.getString("code")));
             case "invite": return Backend.rpc("create_invite", new JSONObject());
             case "expense": return Backend.rpc("expense_detail", new JSONObject().put("p_id", args.getString("id")));
+            case "editExpense": return Backend.rpc("edit_expense", args);
             case "realtime": return Backend.realtimeConfig();
             case "detection": {
                 JSONObject settings = SecureStore.get("settings").put("detection", args.getBoolean("enabled"));

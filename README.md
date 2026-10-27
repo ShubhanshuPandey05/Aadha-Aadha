@@ -2,7 +2,7 @@
 
 A small Android shared-expense tracker for two friends. Flutter handles the ledger UI; Java handles notification detection, encrypted sessions, confirmation actions, background uploads, and FCM. Supabase provides Auth, PostgreSQL, RLS, Realtime, and the push dispatcher.
 
-**Latest evaluation release: 1.0.7, ARM64, 8.03 MB.** Supabase and the push backend are deployed. Google sign-in, group creation, and listener connectivity have been checked on a real device; full two-phone acceptance remains outstanding. See [deployment status](docs/deployment.md). Configured APKs include public client configuration and use the Android debug signing certificate.
+**Latest evaluation release: 1.0.8, ARM64, 8.05 MB.** Supabase and the push backend are deployed. Google sign-in, group creation, and listener connectivity have been checked on a real device; full two-phone acceptance remains outstanding. See [deployment status](docs/deployment.md). Configured APKs include public client configuration and use the Android debug signing certificate.
 
 - [Setup and deployment](docs/setup.md)
 - [Detection, security, and reliability](docs/architecture.md)
@@ -17,7 +17,9 @@ A small Android shared-expense tracker for two friends. Flutter handles the ledg
 - Equal-split confirmation without launching Flutter; manual review when the amount is missing.
 - Durable, encrypted local queue; WorkManager network constraints, retries, and reboot recovery.
 - Integer-paise expenses, custom splits, repayments, current-month totals, all-time contributions and settlement.
-- Member-only ledger access, server-derived payer, immutable validated writes, and idempotency.
+- Member-only ledger access, server-derived payer, validated writes, and idempotency.
+- Optional entry names, creator-only edits and shared before/after history.
+- Automatic release checks and verified APK downloads with Android installation confirmation. See [updates and edits](docs/updates-and-edits.md).
 - Database-triggered push outbox, secure Edge Function, FCM retry/deduplication, expense deep links.
 - Supabase Realtime refresh and reconciliation after reconnecting.
 
