@@ -1,0 +1,2 @@
+-keep class com.twotally.two_tally.SyncWorker { public <init>(...); }
+-keepattributes Signature,InnerClasses,EnclosingMethod

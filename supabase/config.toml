@@ -1,0 +1,8 @@
+project_id = "two-tally"
+
+[auth]
+site_url = "com.twotally.app://auth/confirmed"
+additional_redirect_urls = ["com.twotally.app://auth/confirmed", "com.twotally.app://auth/login-callback"]
+
+[functions.dispatch-push]
+verify_jwt = false

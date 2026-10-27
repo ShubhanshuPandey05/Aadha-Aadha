@@ -1,0 +1,7 @@
+# Aadha/Aadha identity
+
+Generated using the built-in image-generation tool. The master is `aadha-aadha-logo-master.png`; `aadha-aadha-logo.png` is the 512px application asset. Android launcher PNGs are scaled from the same artwork. No new runtime dependency was added.
+
+Generation prompt: Design a final production-ready typographic logo for an Indian shared expense Android app named exactly "Aadha/Aadha". Square 1024x1024 composition, warm ivory solid background #F5F8F4, deep teal #006B60 typography. The actual logo must be large and centered inside the central 70 percent safe zone for a circular Android icon crop: stack the exact name into two lines, "Aadha/" on the top line and "Aadha" on the bottom line, together reading Aadha/Aadha. Bold custom rounded geometric sans-serif lettering, crisp highly legible letterforms, friendly sophisticated contemporary finance app identity. Make slash a lively warm coral accent #F1846B, balanced equal sized words. Flat 2D vector-like edges. No symbols, no currency signs, no taglines, no mockups, no shadows, no gradients, no extra words. Optical balance, generous margins and beautiful kerning. This is the standalone logo artwork, not a presentation board.
+
+Display name only has changed. Android application ID, OAuth callback scheme, Firebase and Supabase project IDs, signing certificate and native channel names remain unchanged to preserve upgrades, login, permissions and local pending expenses. Remote Google consent branding is a separate Google project setting.

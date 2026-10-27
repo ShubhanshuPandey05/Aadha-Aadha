@@ -1,0 +1,57 @@
+plugins {
+    id 'com.android.application'
+    id 'dev.flutter.flutter-gradle-plugin'
+}
+def config = new Properties()
+def configFile = rootProject.file('app-config.properties')
+if (configFile.exists()) configFile.withInputStream { config.load(it) }
+def quoted = { String s -> '"' + s.replace('\\', '\\\\').replace('"', '\\"') + '"' }
+def signing = new Properties()
+def signingFile = rootProject.file('key.properties')
+if (signingFile.exists()) signingFile.withInputStream { signing.load(it) }
+if (file('google-services.json').exists()) apply plugin: 'com.google.gms.google-services'
+android {
+    namespace = 'com.twotally.two_tally'
+    compileSdk = 35
+    ndkVersion = '27.1.12297006'
+    buildFeatures { buildConfig = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    defaultConfig {
+        applicationId = 'com.twotally.two_tally'
+        minSdk = 26
+        targetSdk = 35
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+        buildConfigField 'String', 'SUPABASE_URL', quoted(config.getProperty('SUPABASE_URL', ''))
+        buildConfigField 'String', 'SUPABASE_KEY', quoted(config.getProperty('SUPABASE_KEY', ''))
+    }
+    signingConfigs {
+        if (signingFile.exists()) {
+            release {
+                keyAlias = signing['keyAlias']
+                keyPassword = signing['keyPassword']
+                storeFile = rootProject.file(signing['storeFile'])
+                storePassword = signing['storePassword']
+            }
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig = signingFile.exists() ? signingConfigs.release : signingConfigs.debug
+            minifyEnabled = true
+            shrinkResources = true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    packagingOptions { jniLibs { useLegacyPackaging = true } }
+}
+flutter { source = '../..' }
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+dependencies {
+    implementation 'androidx.work:work-runtime:2.9.1'
+    implementation 'com.google.firebase:firebase-messaging:24.1.2'
+    testImplementation 'junit:junit:4.13.2'
+}
